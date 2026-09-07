@@ -29,8 +29,13 @@ $ErrorActionPreference = 'Continue'
 $raiz = Split-Path -Parent $PSScriptRoot
 Set-Location -LiteralPath $raiz
 
+# Toda la salida va tambien a .git/auto-commit.log, para poder diagnosticar el
+# vigilante cuando lo lanza VS Code y su terminal no esta a la vista.
+$bitacora = Join-Path $raiz '.gituto-commit.log'
 function Escribir($mensaje, $color = 'Gray') {
-    Write-Host ("[{0}] {1}" -f (Get-Date -Format 'HH:mm:ss'), $mensaje) -ForegroundColor $color
+    $linea = "[{0}] {1}" -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $mensaje
+    Write-Host $linea -ForegroundColor $color
+    try { Add-Content -LiteralPath $bitacora -Value $linea -Encoding utf8 } catch { }
 }
 
 if (-not (Test-Path (Join-Path $raiz '.git'))) {
@@ -60,6 +65,7 @@ Set-Content -LiteralPath $candado -Value $PID -Encoding ascii
 $tienePush = -not $SinPush -and [bool](git remote 2>$null)
 if (-not $tienePush) { Escribir "Modo solo-local: no se hara push." 'Yellow' }
 
+Escribir "Arranca vigilante. PID $PID, git en '$((Get-Command git -ErrorAction SilentlyContinue).Source)'." 'DarkGray'
 Escribir "Vigilando $raiz cada $IntervaloSegundos s. Cierra esta terminal para detener." 'Cyan'
 
 $estadoPrevio = $null
