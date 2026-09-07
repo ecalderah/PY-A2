@@ -39,13 +39,21 @@ if (-not (Test-Path (Join-Path $raiz '.git'))) {
 }
 
 # Candado: evita que dos ventanas de VS Code corran el vigilante a la vez.
+# Un candado huerfano (proceso muerto sin limpiar) no debe bloquear el arranque, y
+# tampoco basta con que el PID exista: Windows los recicla, asi que se comprueba
+# que ese proceso sea de verdad otro auto-commit.
 $candado = Join-Path $raiz '.git\auto-commit.lock'
 if (Test-Path $candado) {
     $pidPrevio = (Get-Content -LiteralPath $candado -ErrorAction SilentlyContinue | Select-Object -First 1)
-    if ($pidPrevio -and (Get-Process -Id $pidPrevio -ErrorAction SilentlyContinue)) {
-        Escribir "Ya hay un auto-commit corriendo (PID $pidPrevio). Salgo." 'Yellow'
-        exit 0
+    if ($pidPrevio -match '^\d+$') {
+        $otro = Get-CimInstance Win32_Process -Filter "ProcessId=$pidPrevio" -ErrorAction SilentlyContinue
+        if ($otro -and $otro.CommandLine -like '*auto-commit*') {
+            Escribir "Ya hay un auto-commit corriendo (PID $pidPrevio). Salgo." 'Yellow'
+            exit 0
+        }
     }
+    Escribir "Candado huerfano encontrado; lo descarto." 'DarkGray'
+    Remove-Item -LiteralPath $candado -Force -ErrorAction SilentlyContinue
 }
 Set-Content -LiteralPath $candado -Value $PID -Encoding ascii
 
