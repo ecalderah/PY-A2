@@ -1,0 +1,8 @@
+{
+  "python.defaultInterpreterPath": "${workspaceFolder}/.venv/Scripts/python.exe",
+  "task.allowAutomaticTasks": "on",
+  "files.autoSave": "afterDelay",
+  "files.autoSaveDelay": 2000,
+  "git.autofetch": true,
+  "notebook.output.textLineLimit": 60
+}

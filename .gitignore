@@ -1,2 +1,30 @@
-.ipynb_checkpoints/
+# Entorno virtual (convención: .venv dentro del proyecto)
+.venv/
+env/
+venv/
+
+# Python
 __pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb~
+
+# Datos pesados / salidas locales
+*.csv.gz
+*.parquet
+*.xlsx~$
+
+# Sistema operativo / editor
+Thumbs.db
+desktop.ini
+.DS_Store
+*.log
+
+# Estado interno del auto-commit
+.git/auto-commit.lock

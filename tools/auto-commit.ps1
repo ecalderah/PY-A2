@@ -1,0 +1,106 @@
+<#
+.SYNOPSIS
+    Respaldo automatico en Git: vigila la carpeta del proyecto y hace commit + push
+    cuando detecta cambios guardados.
+
+.DESCRIPTION
+    Se lanza solo al abrir la carpeta en VS Code (ver .vscode/tasks.json).
+    Cada IntervaloSegundos revisa 'git status --porcelain'. Solo hace commit cuando
+    el estado se repite identico dos ciclos seguidos, para no commitear a medias
+    mientras el editor todavia esta escribiendo el archivo.
+
+.PARAMETER IntervaloSegundos
+    Segundos entre revisiones. Por defecto 15.
+
+.PARAMETER SinPush
+    Si se indica, solo hace commit local y nunca contacta a GitHub.
+
+.EXAMPLE
+    powershell -ExecutionPolicy Bypass -File tools\auto-commit.ps1
+    powershell -ExecutionPolicy Bypass -File tools\auto-commit.ps1 -IntervaloSegundos 30 -SinPush
+#>
+[CmdletBinding()]
+param(
+    [int]$IntervaloSegundos = 15,
+    [switch]$SinPush
+)
+
+$ErrorActionPreference = 'Continue'
+$raiz = Split-Path -Parent $PSScriptRoot
+Set-Location -LiteralPath $raiz
+
+function Escribir($mensaje, $color = 'Gray') {
+    Write-Host ("[{0}] {1}" -f (Get-Date -Format 'HH:mm:ss'), $mensaje) -ForegroundColor $color
+}
+
+if (-not (Test-Path (Join-Path $raiz '.git'))) {
+    Escribir "No hay repositorio git en $raiz. Ejecuta 'git init' primero." 'Red'
+    exit 1
+}
+
+# Candado: evita que dos ventanas de VS Code corran el vigilante a la vez.
+$candado = Join-Path $raiz '.git\auto-commit.lock'
+if (Test-Path $candado) {
+    $pidPrevio = (Get-Content -LiteralPath $candado -ErrorAction SilentlyContinue | Select-Object -First 1)
+    if ($pidPrevio -and (Get-Process -Id $pidPrevio -ErrorAction SilentlyContinue)) {
+        Escribir "Ya hay un auto-commit corriendo (PID $pidPrevio). Salgo." 'Yellow'
+        exit 0
+    }
+}
+Set-Content -LiteralPath $candado -Value $PID -Encoding ascii
+
+$tienePush = -not $SinPush -and [bool](git remote 2>$null)
+if (-not $tienePush) { Escribir "Modo solo-local: no se hara push." 'Yellow' }
+
+Escribir "Vigilando $raiz cada $IntervaloSegundos s. Cierra esta terminal para detener." 'Cyan'
+
+$estadoPrevio = $null
+try {
+    while ($true) {
+        Start-Sleep -Seconds $IntervaloSegundos
+
+        $estado = (git status --porcelain 2>$null) -join "`n"
+
+        if ([string]::IsNullOrWhiteSpace($estado)) {
+            $estadoPrevio = $null
+            continue
+        }
+
+        # Espera a que el arbol se estabilice antes de commitear.
+        if ($estado -ne $estadoPrevio) {
+            $estadoPrevio = $estado
+            continue
+        }
+
+        $archivos = ($estado -split "`n").Count
+        $marca = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
+
+        git add -A 2>&1 | Out-Null
+        $salida = git commit -m "auto: respaldo $marca" 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            Escribir "Commit sin efecto: $($salida -join ' ')" 'DarkGray'
+            $estadoPrevio = $null
+            continue
+        }
+        Escribir "Commit hecho ($archivos archivo(s))." 'Green'
+        $estadoPrevio = $null
+
+        if (-not $tienePush) { continue }
+
+        git push 2>&1 | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            Escribir "Push fallo; intento rebase sobre el remoto." 'Yellow'
+            git pull --rebase --autostash 2>&1 | Out-Null
+            git push 2>&1 | Out-Null
+            if ($LASTEXITCODE -ne 0) {
+                Escribir "Push sigue fallando (sin red o conflicto). Reintento en el proximo ciclo." 'Red'
+                continue
+            }
+        }
+        Escribir "Push a GitHub listo." 'Green'
+    }
+}
+finally {
+    Remove-Item -LiteralPath $candado -Force -ErrorAction SilentlyContinue
+    Escribir "Auto-commit detenido." 'Cyan'
+}
